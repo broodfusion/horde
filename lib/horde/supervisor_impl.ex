@@ -18,8 +18,6 @@ defmodule Horde.SupervisorImpl do
             processes_by_id: %{},
             process_pid_to_id: %{},
             waiting_for_quorum: [],
-            processes_updated_counter: 0,
-            processes_updated_at: 0,
             supervisor_ref_to_name: %{},
             name_to_supervisor_ref: %{},
             shutting_down: false,
@@ -59,6 +57,8 @@ defmodule Horde.SupervisorImpl do
       |> Map.merge(Map.new(Keyword.take(options, [:distribution_strategy])))
 
     state = set_own_node_status(state)
+
+    execute_telemetry(state)
 
     {:ok, state, {:continue, {:set_members, Keyword.get(options, :members)}}}
   end
@@ -295,6 +295,23 @@ defmodule Horde.SupervisorImpl do
     )
 
     state
+  end
+
+  defp execute_telemetry(state) do
+    :telemetry.execute(
+      [:horde, :cluster, :info],
+      %{process_count: map_size(state.processes_by_id)},
+      %{
+        member: state.name
+      }
+    )
+
+    Process.send_after(self(), :execute_telemetry, 1000)
+  end
+
+  def handle_info(:execute_telemetry, state) do
+    execute_telemetry(state)
+    {:noreply, state}
   end
 
   def handle_info({:set_members, members}, state) do
